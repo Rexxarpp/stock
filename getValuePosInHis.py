@@ -1,4 +1,5 @@
 import csv
+import datetime
 
 # 入参csvFile（文件）：记录指数（基金）历史点数（净值）的文件
 # 出参stockDict(字典类型)key:日期datetime.datetime类型，  value:收盘值 float型
@@ -22,9 +23,51 @@ def createOrignDict(csvFile, stockDict, beginEndTime):
 
 
 def getValuePosInHis(currentValue, csvFile, beginEndDate):
-    return 50
+    rtValue = 0.0
+    f = open(csvFile, 'r')
+    f_cfv = csv.reader(f)          #如果没有此项读出空字符串。例如：['2010-02-15', '', '3.3022', '0.1215']
+    bigNo = 0   #比currentValue大的天数
+    equalNo = 0  #与currentValue相等的天数
+    smallNo = 0  #比currentValue小的天数
+    smallValue = 1000.0 #csv文件中在beginEndDate之间的最小值
+    bigValue = -1000.0 #csv文件中在beginEndDate之间的最大值
+    for row in (f_cfv):
+        date_p = datetime.datetime.strptime(row[0], '%Y-%m-%d')
+        if beginEndDate["begin"] <= date_p and beginEndDate["end"] >= date_p:
+            if row[1]: #如果PE值存在(空字符串''转成bool型为False)（row[1]：pe.  row[2]:pb.  row[3]:roe.）
+                float_value = float(row[1])
+                if float_value < currentValue:
+                    smallNo += 1
+                elif float_value > currentValue:
+                    bigNo += 1
+                else:
+                    equalNo += 1
+                if smallValue > float_value:
+                    smallValue = float_value        # 找出区间内的最小值
+                if bigValue < float_value:
+                    bigValue = float_value          # 找出区间内的最大值
+    print("currentValue:%f" %(currentValue))
+    print("bigNo:%f.equalNo:%f.smallNo:%f" % (bigNo, equalNo, smallNo))
+    print("smallValue:%f.bigValue:%f" % (smallValue, bigValue))
+    if currentValue >= smallValue and currentValue <= bigValue:
+        rtValue = (float(equalNo)/2 + float(bigNo)) * 100/(equalNo + smallNo + bigNo)
+    elif currentValue < smallValue:
+        rtValue = 100.0 * (currentValue/smallValue - 1)
+        if rtValue < -50.0:
+            rtValue = -50.0
+    else:
+        rtValue = 100.0 * (currentValue/bigValue)
+        if rtValue > 200.0:
+            rtValue = 200.0
+    return rtValue
 
 
+    
+csv_f = "D:\\stockInfo\\danjuan\\9.csv"
+currentValue = 27.3
+beginEndDate = {'begin':datetime.datetime.strptime('2010-02-14', '%Y-%m-%d'), 'end':datetime.datetime.strptime('2010-02-20', '%Y-%m-%d')}
+a = getValuePosInHis(currentValue, csv_f, beginEndDate)
+print(a)
 
 # 使用今天的估值比例（比历史上百分之多少的时间便宜）来计算今天的仓位，从而得到买入或卖出的数量
 # value(float)使用百分数，例如比5%时间便宜，则value = 5
