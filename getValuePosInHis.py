@@ -21,17 +21,31 @@ def createOrignDict(csvFile, stockDict, beginEndTime):
                 stockDict[date_p] = float(row[3])
     print("Total %d Records insert in dictory" % count)
 
-
-def getValuePosInHis(currentValue, csvFile, beginEndDate):
-    rtValue = 0.0
+def getHisValueFromCsv(csvFile):
+    csv_list = []
     f = open(csvFile, 'r')
-    f_cfv = csv.reader(f)          #如果没有此项读出空字符串。例如：['2010-02-15', '', '3.3022', '0.1215']
+    f_csv = csv.reader(f)
+    for row in f_csv:
+        csv_list.append(row)
+    return csv_list #行内容。如果没有此项读出空字符串。例如：['2010-02-15', '', '3.3022', '0.1215']
+
+def getCurrentValue(currentDate, csvList):
+    c_value = -1.0
+    for row in csvList:
+        date_p = datetime.datetime.strptime(row[0], '%Y-%m-%d')
+        if currentDate == date_p:
+            c_value = float(row[1])
+            return c_value
+    return c_value   #/没有找到这天
+
+def getValuePosInHis(currentValue, csvList, beginEndDate):
+    rtValue = 0.0
     bigNo = 0   #比currentValue大的天数
     equalNo = 0  #与currentValue相等的天数
     smallNo = 0  #比currentValue小的天数
     smallValue = 1000.0 #csv文件中在beginEndDate之间的最小值
     bigValue = -1000.0 #csv文件中在beginEndDate之间的最大值
-    for row in (f_cfv):
+    for row in (csvList):
         date_p = datetime.datetime.strptime(row[0], '%Y-%m-%d')
         if beginEndDate["begin"] <= date_p and beginEndDate["end"] >= date_p:
             if row[1]: #如果PE值存在(空字符串''转成bool型为False)（row[1]：pe.  row[2]:pb.  row[3]:roe.）
@@ -46,9 +60,9 @@ def getValuePosInHis(currentValue, csvFile, beginEndDate):
                     smallValue = float_value        # 找出区间内的最小值
                 if bigValue < float_value:
                     bigValue = float_value          # 找出区间内的最大值
-    print("currentValue:%f" %(currentValue))
-    print("bigNo:%f.equalNo:%f.smallNo:%f" % (bigNo, equalNo, smallNo))
-    print("smallValue:%f.bigValue:%f" % (smallValue, bigValue))
+#    print("currentValue:%f" %(currentValue))
+#    print("bigNo:%f.equalNo:%f.smallNo:%f" % (bigNo, equalNo, smallNo))
+#    print("smallValue:%f.bigValue:%f" % (smallValue, bigValue))
     if currentValue >= smallValue and currentValue <= bigValue:
         rtValue = (float(equalNo)/2 + float(bigNo)) * 100/(equalNo + smallNo + bigNo)
     elif currentValue < smallValue:
@@ -62,12 +76,6 @@ def getValuePosInHis(currentValue, csvFile, beginEndDate):
     return rtValue
 
 
-    
-csv_f = "D:\\stockInfo\\danjuan\\9.csv"
-currentValue = 27.3
-beginEndDate = {'begin':datetime.datetime.strptime('2010-02-14', '%Y-%m-%d'), 'end':datetime.datetime.strptime('2010-02-20', '%Y-%m-%d')}
-a = getValuePosInHis(currentValue, csv_f, beginEndDate)
-print(a)
 
 # 使用今天的估值比例（比历史上百分之多少的时间便宜）来计算今天的仓位，从而得到买入或卖出的数量
 # value(float)使用百分数，例如比5%时间便宜，则value = 5
@@ -86,11 +94,10 @@ def getPositionFromValuePos(value):
     else:
         y = (-50 * x + 5)
     return y
-    pass
 
 
 # 模拟投资
-def beginInv(beginDate, beginWeekDay, beginTotalMoney, referenceYears, endDate = datetime.datetime.now()):
+def beginInv(beginDate, beginWeekDay, beginTotalMoney, cycleDays, referenceYears, endDate = datetime.datetime.now()):
     if beginDate.__lt__(beginEndTime["beginTime"]) or beginDate.__gt__(beginEndTime["endTime"]):
         print("beginData not in range")
         return
@@ -100,19 +107,55 @@ def beginInv(beginDate, beginWeekDay, beginTotalMoney, referenceYears, endDate =
     if dayDiff < 0:
         dayDiff = dayDiff + 7
     beginDate = beginDate + datetime.timedelta(days=dayDiff)
-    print("Begin inV at date: %s,  week: %d\n" % (beginDate.strftime('%Y-%m-%d'), beginDate.weekday() + 1))
+    print("Begin inV at date: %s,  week: %d\n" % (beginDate.strftime('%Y-%m-%d'), beginDate.weekday() + 1)) 
 
     # 获得参考日期
+    referBeginEndDate = {}
     referBeginEndDate["end"] = beginDate - datetime.timedelta(days=1)
     referBeginEndDate["begin"] = referBeginEndDate["end"] - datetime.timedelta(days=referenceYears*365)
 
+    totalMoney = beginTotalMoney
+    totalMoneyIn = 0
+    totalNo = 0  # 当前份额
+    totalCash = beginTotalMoney
+    
     currentDate = beginDate  # 当前日期
-
     while currentDate.__lt__(endDate):
 
         if currentDate not in outDict:
             # print("今天没有开市，取消定投.日期:%s\n" % currentDate.strftime('%Y-%m-%d'))
-            currentDate = currentDate + datetime.timedelta(cycleDays)
+            currentDate = currentDate + datetime.timedelta(days=cycleDays)
             continue
 
         currentPrice = outDict[currentDate]
+        totalMoneyIn = currentPrice * totalNo
+        totalMoney = totalMoneyIn + totalCash
+        currentPeValue = getCurrentValue(currentDate, csvList)
+        rt = getValuePosInHis(currentPeValue, csvList, referBeginEndDate)
+        pos = getPositionFromValuePos(rt)
+        cashUse = pos/100 * totalMoney - totalMoneyIn
+
+
+        print("今天是%s。今天的价格:%f.今天总资金:%f"% (currentDate.strftime('%Y-%m-%d'), currentPrice, totalMoney))
+        print("今天的估值为：%f. 今天比历史上%f%%时间便宜" % (currentPeValue, rt))
+        print("今天之前舱内金额:%f.舱外金额:%f.仓位:%f%%" % (totalMoneyIn, totalCash, totalMoneyIn * 100/totalMoney))
+
+        print("今天的仓位应该是:%f%%.今天买入:%f\n" % (pos, cashUse))
+        totalNo = totalNo + cashUse/currentPrice
+        totalCash = totalCash - cashUse
+        currentDate = currentDate + datetime.timedelta(days=cycleDays)
+
+outDict = {}
+beginEndTime = {}
+zhishu_csv_file1 = "D:\\stockInfo\\163\\000300.csv"
+pe_csv_file1 = "D:\\stockInfo\\danjuan\\SH000300.csv"
+
+createOrignDict(zhishu_csv_file1, outDict, beginEndTime)
+csvList = getHisValueFromCsv(pe_csv_file1)
+
+beginDate = datetime.datetime.strptime("2017-10-20", '%Y-%m-%d')
+weekday = 3
+beginTotalMoney = 20000
+refYears = 5
+invCycle = 7
+beginInv(beginDate, weekday, beginTotalMoney, invCycle, refYears)
