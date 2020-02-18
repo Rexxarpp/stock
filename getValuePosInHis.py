@@ -1,5 +1,28 @@
 import csv
 import datetime
+import os
+
+
+def xirr(transactions):
+    years = [(ta[0] - transactions[0][0]).days / 365.0 for ta in transactions]
+    residual = 1
+    step = 0.05
+    guess = 0.05
+    epsilon = 0.0001
+    limit = 10000
+    while abs(residual) > epsilon and limit > 0:
+        limit -= 1
+        residual = 0.0
+        for i, ta in enumerate(transactions):
+            residual += ta[1] / pow(guess, years[i])
+        if abs(residual) > epsilon:
+            if residual > 0:
+                guess += step
+            else:
+                guess -= step
+                step /= 2.0
+    return guess-1
+
 
 # 入参csvFile（文件）：记录指数（基金）历史点数（净值）的文件
 # 出参stockDict(字典类型)key:日期datetime.datetime类型，  value:收盘值 float型
@@ -19,7 +42,9 @@ def createOrignDict(csvFile, stockDict, beginEndTime):
                 if beginEndTime["endTime"].__lt__(date_p):
                     beginEndTime["endTime"] = date_p
                 stockDict[date_p] = float(row[3])
+        f.close()
     print("Total %d Records insert in dictory" % count)
+
 
 def getHisValueFromCsv(csvFile):
     csv_list = []
@@ -27,7 +52,9 @@ def getHisValueFromCsv(csvFile):
     f_csv = csv.reader(f)
     for row in f_csv:
         csv_list.append(row)
+    f.close()
     return csv_list #行内容。如果没有此项读出空字符串。例如：['2010-02-15', '', '3.3022', '0.1215']
+
 
 def getCurrentValue(currentDate, csvList):
     c_value = -1.0
@@ -37,6 +64,7 @@ def getCurrentValue(currentDate, csvList):
             c_value = float(row[1])
             return c_value
     return c_value   #/没有找到这天
+
 
 def getValuePosInHis(currentValue, csvList, beginEndDate):
     rtValue = 0.0
@@ -107,7 +135,11 @@ def beginInv(beginDate, beginWeekDay, beginTotalMoney, cycleDays, referenceYears
     if dayDiff < 0:
         dayDiff = dayDiff + 7
     beginDate = beginDate + datetime.timedelta(days=dayDiff)
-    print("Begin inV at date: %s,  week: %d\n" % (beginDate.strftime('%Y-%m-%d'), beginDate.weekday() + 1)) 
+    print("Begin inV at date: %s,  week: %d\n" % (beginDate.strftime('%Y-%mmm-%d'), beginDate.weekday() + 1))
+    csvFullPath = os.path.dirname(os.path.realpath(__file__)) + os.path.sep + "out.csv"
+    f = open(csvFullPath, 'w', newline='')
+    f_csv = csv.writer(f)
+    f_csv.writerow(["data", "cashUse", "totalMoneyIn", "pe", "pe%", "totalMoney"])
 
     # 获得参考日期
     referBeginEndDate = {}
@@ -118,8 +150,9 @@ def beginInv(beginDate, beginWeekDay, beginTotalMoney, cycleDays, referenceYears
     totalMoneyIn = 0
     totalNo = 0  # 当前份额
     totalCash = beginTotalMoney
-    
+
     currentDate = beginDate  # 当前日期
+    cashFlow = []
     while currentDate.__lt__(endDate):
 
         if currentDate not in outDict:
@@ -135,15 +168,20 @@ def beginInv(beginDate, beginWeekDay, beginTotalMoney, cycleDays, referenceYears
         pos = getPositionFromValuePos(rt)
         cashUse = pos/100 * totalMoney - totalMoneyIn
 
-
+        cashFlow.append((currentDate.date(), totalMoneyIn))
         print("今天是%s。今天的价格:%f.今天总资金:%f"% (currentDate.strftime('%Y-%m-%d'), currentPrice, totalMoney))
         print("今天的估值为：%f. 今天比历史上%f%%时间便宜" % (currentPeValue, rt))
         print("今天之前舱内金额:%f.舱外金额:%f.仓位:%f%%" % (totalMoneyIn, totalCash, totalMoneyIn * 100/totalMoney))
-
+        print("年化收益率%f%%" % (xirr(cashFlow) * 100))
         print("今天的仓位应该是:%f%%.今天买入:%f\n" % (pos, cashUse))
+        f_csv.writerow([currentDate.strftime('%Y-%m-%d'), 0.0 - cashUse, totalMoneyIn,
+                        currentPeValue, rt, totalMoney])
         totalNo = totalNo + cashUse/currentPrice
         totalCash = totalCash - cashUse
         currentDate = currentDate + datetime.timedelta(days=cycleDays)
+        cashFlow.pop()
+        cashFlow.append((currentDate.date(), 0.0 - cashUse))
+    f.close()
 
 outDict = {}
 beginEndTime = {}
